@@ -1280,102 +1280,108 @@ tygnc (13) -> ucxedq, jgwvp, kgevjdx
 ojhlp (137) -> zqnul, vmvxwar, cgfykiv
 hpuyku (82)';
 
-SET @Input = 'pbga (66)
-xhth (57)
-ebii (61)
-havc (66)
-ktlj (57)
-fwft (72) -> ktlj, cntj, xhth
-qoyq (66)
-padx (45) -> pbga, havc, qoyq
-tknk (41) -> ugml, padx, fwft
-jptl (61)
-ugml (68) -> gyxo, ebii, jptl
-gyxo (61)
-cntj (57)'
-
-DROP TABLE IF EXISTS #Programs, #TopDownHierarchies, #BottomUpHierarchies;
+DROP TABLE IF EXISTS #Programs, #Hierarchies, #FullTower;
 SELECT Program = SUBSTRING(String, 1, CHARINDEX(' ', String) - 1)
      , SubPrograms = IIF(String LIKE '%->%', SUBSTRING(String, CHARINDEX('-> ', String) + 3, LEN(String)), NULL)
      , [Weight] = CONVERT(INT, SUBSTRING(String, CHARINDEX('(', String)+1, CHARINDEX(')', String) - CHARINDEX('(', String) - 1))
 INTO #Programs
-FROM Utility.Tools.SplitStringMAX(@Input, CHAR(13)+CHAR(10))
+FROM Manage.Tools.SplitStringMax(@Input, CHAR(13)+CHAR(10))
 
-SELECT Program
+SELECT Program = CONVERT(VARCHAR(8), Program)
      , [Weight]
-     , SubProgram = String
-INTO #TopDownHierarchies
+     , SubProgram = CONVERT(VARCHAR(8), String)
+INTO #Hierarchies
 FROM #Programs
-     CROSS APPLY Utility.Tools.SplitString(SubPrograms, ', ')
+     CROSS APPLY Manage.Tools.SplitString(SubPrograms, ', ')
 
 SELECT DISTINCT Solution1 = Program
-FROM #TopDownHierarchies h1
+FROM #Hierarchies h1
 WHERE NOT EXISTS (SELECT 1
-                  FROM #TopDownHierarchies h2
+                  FROM #Hierarchies h2
                   WHERE h1.Program = h2.SubProgram);
 
-SELECT ParentProgram = h.Program
-     , p.Program
-     , p.[Weight]
-INTO #BottomUpHierarchies
-FROM #TopDownHierarchies h
-     JOIN #Programs p
-       ON h.SubProgram = p.Program;
-
-
-WITH BuildTowers
-     AS (SELECT ParentProgram
-              , Program
-              , [Weight]
+WITH BuildTower
+     AS (SELECT Program
+              , SubProgram
               , [Level] = 1
-         FROM #BottomUpHierarchies h1
+         FROM #Hierarchies h1
          WHERE NOT EXISTS (SELECT 1
-                           FROM #BottomUpHierarchies h2
-                           WHERE h1.Program = h2.ParentProgram)
+                           FROM #Hierarchies h2
+                           WHERE h1.Program = h2.SubProgram)
          UNION ALL
-         SELECT h.ParentProgram
-              , h.Program
-              , h.[Weight]
+         SELECT h.Program
+              , h.SubProgram
               , [Level] = [Level] + 1
-         FROM BuildTowers bt
-              JOIN #BottomUpHierarchies h
-                ON bt.ParentProgram = h.Program)
-   , DistinctTower 
-     AS (SELECT DISTINCT *
-         FROM BuildTowers)
+         FROM BuildTower bt
+              JOIN #Hierarchies h
+                ON bt.SubProgram = h.Program)
+   , MaxLevel
+     AS (SELECT MaxLevel = MAX([Level])
+         FROM BuildTower)
    , TraverseTower
-     AS (SELECT 
-   
+     AS (SELECT [Level]
+              , Program
+              , Branch = SubProgram
+              , SubProgram
+         FROM BuildTower
+         WHERE [Level] = (SELECT MaxLevel FROM MaxLevel) - 1
+         UNION ALL
+         SELECT bt.[Level]
+              , bt.Program
+              , Branch = tt.Program
+              , s.SubProgram
+         FROM BuildTower bt
+              JOIN TraverseTower tt
+                ON bt.SubProgram = tt.Program
+              CROSS APPLY (SELECT tt.SubProgram
+                           UNION ALL
+                           SELECT tt.Program) s)
 
-SELECT *
-FROM DistinctTower
-ORDER BY Level DESC,
-         ParentProgram,
-         Program
-
-
-/*
-SELECT * FROM #FullHierarchy WHERE Program = 'agliie'
-
-SELECT * FROM #FullHierarchy WHERE Program = 'izhdt'
-SELECT * FROM #FullHierarchy WHERE Program = 'antcinm'
-
+SELECT DISTINCT
+       [Level]
+     , Program
+     , Branch = SubProgram
+     , SubProgram
+INTO #FullTower
+FROM BuildTower
+UNION
 SELECT [Level]
      , Program
-     , [Weight]
-     , TotalSubWeight = SUM(SubWeight)
-     , MinSubWeight = MIN(SubWeight)
-     , MaxSubWeight = MAX(SubWeight)
-FROM #FullHierarchy
-GROUP BY [Level]
-       , Program
-       , [Weight]
-HAVING MIN(SubWeight) < MAX(SubWeight)
-ORDER BY [Level]
-       , Program;
+     , Branch
+     , SubProgram
+FROM TraverseTower;
 
-SELECT * FROM #FullHierarchy WHERE Program = 'agliie'
+WITH WeightSums 
+     AS (SELECT ft.[Level]
+              , ft.Program
+              , ft.Branch
+              , TotalWeight = SUM(p.[Weight])
+         FROM #FullTower ft
+              JOIN #Programs p
+                ON ft.SubProgram = p.Program
+         GROUP BY ft.[Level]
+                , ft.Program
+                , ft.Branch)
+   , FirstBreak
+     AS (SELECT TOP 1
+                Program
+         FROM [WeightSums]
+         GROUP BY [Level]
+                , Program
+         HAVING MIN(TotalWeight) < MAX(TotalWeight)
+         ORDER BY [Level] DESC)
+   , CorrectWeight
+     AS (SELECT TOP 1 
+                TotalWeight
+              , c = COUNT(*) OVER (PARTITION BY TotalWeight)
+         FROM WeightSums
+         WHERE Program = (SELECT Program FROM FirstBreak)
+         ORDER BY c DESC)
 
-SELECT * FROM #FullHierarchy WHERE Program = 'izhdt'
-SELECT * FROM #FullHierarchy WHERE Program = 'antcinm'
-*/
+SELECT Solution2 = p.[Weight] + (cw.TotalWeight - ws.TotalWeight), *
+FROM WeightSums ws
+     JOIN CorrectWeight cw
+       ON ws.TotalWeight <> cw.TotalWeight
+     JOIN #Programs p
+       ON ws.Branch = p.Program
+WHERE ws.Program = (SELECT Program FROM FirstBreak);

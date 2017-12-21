@@ -1300,13 +1300,12 @@ WHERE NOT EXISTS (SELECT 1
                   FROM #Hierarchies h2
                   WHERE h1.Program = h2.SubProgram);
 
-WITH RecurseMe
+WITH BuildTowers
      AS (SELECT Program
               , SubProgram
               , [Weight]
               , [Level] = 1
-              , MinSubWeight = 0
-              , MaxSubWeight = 0
+              , TopProgram = Program
          FROM #Hierarchies
          WHERE SubProgram IS NULL
          UNION ALL
@@ -1314,19 +1313,37 @@ WITH RecurseMe
               , h.SubProgram
               , h.[Weight]
               , [Level] = [Level] + 1
-              , MinSubWeight = MIN(rm.[Weight]) OVER (PARTITION BY h.Program)
-              , MaxSubWeight = MAX(rm.[Weight]) OVER (PARTITION BY h.Program)
-         FROM RecurseMe rm
+              , TopProgram = bt.TopProgram
+         FROM BuildTowers bt
               JOIN #Hierarchies h
-                ON rm.Program = h.SubProgram)
-
-
+                ON bt.Program = h.SubProgram)
+   , MaxLevel
+     AS (SELECT TopProgram
+              , MaxLevel = MAX([Level])
+         FROM BuildTowers
+         GROUP BY TopProgram)
+   , WeightSums 
+     AS (SELECT bt.Program
+              , bt.SubProgram
+              , bt.[Weight]
+              , bt.[Level]
+         FROM BuildTowers bt
+              JOIN MaxLevel ml
+                ON bt.[TopProgram] = ml.[TopProgram]
+         WHERE bt.[Level] = ml.[MaxLevel]
+         UNION ALL
+         SELECT bt.Program
+              , bt.SubProgram
+              , ws.[Weight]
+              , bt.[Level]
+         FROM BuildTowers bt
+              JOIN WeightSums ws 
+                ON ws.Program = ws.SubProgram
+                   AND bt.[Level] = ws.[Level] - 1)
 SELECT *
-FROM RecurseMe
-WHERE MinSubWeight < MaxSubWeight
-ORDER BY Level DESC
-       , Program
-       , SubProgram;
+FROM WeightSums;
+
+
 /*
 SELECT * FROM #FullHierarchy WHERE Program = 'agliie'
 

@@ -1,4 +1,5 @@
-DECLARE @Input VARCHAR(MAX) = '31,2,85,1,80,109,35,63,98,255,0,13,105,254,128,33';
+DECLARE @Input VARCHAR(MAX) = '3, 4, 1, 5';
+SET NOCOUNT ON;
 
 DROP TABLE IF EXISTS #Lengths, #List;
 SELECT ID = ID - 1
@@ -10,16 +11,16 @@ SELECT ID = Number
      , [Value] = Number - 1
 INTO #List
 FROM Numbers
-WHERE Number <= 256;
+WHERE Number <= 5;
 
 --SELECT * FROM #Lengths;
 --SELECT * FROM #List;
 
-DECLARE @Position INT = 0, @Length INT, @SkipSize INT = 0;
+DECLARE @Position INT = 1, @Length INT, @SkipSize INT = 0;
 DECLARE @Final INT = (SELECT MAX(ID)
                       FROM #Lengths);
 
-WHILE @SkipSize <= 0--@Final
+WHILE @SkipSize <= @Final
   BEGIN
     SELECT @Length = [Length]
     FROM #Lengths
@@ -28,16 +29,19 @@ WHILE @SkipSize <= 0--@Final
     WITH cte
          AS (SELECT *
              FROM #List
-                  CROSS APPLY (SELECT Steps = IIF(ID > @Position, ID - @Position, ID + 256 - @Position)) sa -- If the block is BEFORE the original block, add 16 to treat as a wrap around
+                  CROSS APPLY (SELECT Steps = IIF(ID >= @Position, ID - @Position + 1, ID + 5 - @Position + 1)) sa -- If the block is BEFORE the original block, add 16 to treat as a wrap around
              WHERE Steps BETWEEN 1 AND @Length)
     UPDATE c1
     SET [Value] = c2.[Value]
     FROM cte c1
          JOIN cte c2
-           ON c1.Steps = @Length - c2.Steps + 1
+           ON c1.Steps = @Length - c2.Steps + 1;
 
-    SET @SkipSize += 1
+
+    SET @Position = (@Position + @Length + @SkipSize)%5; 
+    SET @SkipSize += 1;
+    
+    SELECT *, @Position, @SkipSize, @Length FROM #List
   END;
 
-  SELECT *
-  FROM 
+  SELECT * FROM #List;

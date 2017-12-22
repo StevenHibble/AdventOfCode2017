@@ -1,4 +1,4 @@
-DECLARE @Input VARCHAR(MAX) = '3, 4, 1, 5';
+DECLARE @Input VARCHAR(MAX) = '31,2,85,1,80,109,35,63,98,255,0,13,105,254,128,33';
 SET NOCOUNT ON;
 
 DROP TABLE IF EXISTS #Lengths, #List;
@@ -11,7 +11,7 @@ SELECT ID = Number
      , [Value] = Number - 1
 INTO #List
 FROM Numbers
-WHERE Number <= 5;
+WHERE Number <= 256;
 
 --SELECT * FROM #Lengths;
 --SELECT * FROM #List;
@@ -29,7 +29,7 @@ WHILE @SkipSize <= @Final
     WITH cte
          AS (SELECT *
              FROM #List
-                  CROSS APPLY (SELECT Steps = IIF(ID >= @Position, ID - @Position + 1, ID + 5 - @Position + 1)) sa -- If the block is BEFORE the original block, add 16 to treat as a wrap around
+                  CROSS APPLY (SELECT Steps = IIF(ID >= @Position, ID - @Position + 1, ID + 256 - @Position + 1)) sa -- If the block is BEFORE the original block, add 16 to treat as a wrap around
              WHERE Steps BETWEEN 1 AND @Length)
     UPDATE c1
     SET [Value] = c2.[Value]
@@ -38,10 +38,8 @@ WHILE @SkipSize <= @Final
            ON c1.Steps = @Length - c2.Steps + 1;
 
 
-    SET @Position = (@Position + @Length + @SkipSize)%5; 
+    SET @Position = (@Position + @Length + @SkipSize)%256; 
     SET @SkipSize += 1;
-    
-    SELECT *, @Position, @SkipSize, @Length FROM #List
   END;
 
-  SELECT * FROM #List;
+  SELECT Solution1 = (SELECT [Value] FROM #List WHERE ID = 1) * (SELECT [Value] FROM #List WHERE ID = 2);
